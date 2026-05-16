@@ -109,7 +109,12 @@ export async function parseMarkdownToWordHtml(markdown: string): Promise<string>
     .use(rehypeStringify)
     .process(preprocessed);
 
-  // Wrap in a minimal HTML document so Word picks up the structure correctly
+  // Wrap in an HTML document with explicit MathML namespace so Word recognises
+  // and converts the <math> elements to native OMML equations on paste.
   const body = String(file);
-  return `<!DOCTYPE html><html><body>${body}</body></html>`;
+  return `<!DOCTYPE html>
+<html xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
+<head><meta charset="utf-8"></head>
+<body>${body}</body>
+</html>`;
 }
