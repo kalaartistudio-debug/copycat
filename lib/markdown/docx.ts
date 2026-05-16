@@ -3,6 +3,7 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import remarkDocx, { type DocxOptions } from "remark-docx";
+import { latexPlugin } from "remark-docx/plugins/latex";
 import { preprocessAIOutput } from "./parse";
 
 // No page-break, compact sizes. All sizes in half-points (24 = 12pt, 28 = 14pt, etc.)
@@ -43,7 +44,7 @@ const docxOptions: DocxOptions = {
       },
     },
   } as DocxOptions["styles"],
-  plugins: [],
+  plugins: [latexPlugin()],
 };
 
 export async function generateDocxBuffer(markdown: string): Promise<ArrayBuffer> {
