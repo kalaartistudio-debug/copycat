@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
     'remark-docx',
     '@mathjax/src',
     'mathjax-full',
+    'rehype-mathjax',
     'shiki',
     '@shikijs/core',
   ],

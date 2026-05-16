@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Toolbar } from "@/components/editor/Toolbar";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { Preview } from "@/components/editor/Preview";
-import { parseMarkdownToHtml, parseMarkdownToWordHtml } from "@/lib/markdown/parse";
+import { parseMarkdownToHtml } from "@/lib/markdown/parse";
 
 const INITIAL_MARKDOWN = `# Q.9) Derive an expression for barrier potential in a p-n junction diode.`; // Replaced by fetch anyway
 
@@ -22,20 +22,27 @@ export default function EditorPage() {
       .catch(err => console.error(err));
   }, []);
 
-  // Debounced parsing — generates both preview HTML and Word-paste HTML in parallel
+  // Debounced parsing — generates preview HTML client-side and Word HTML server-side in parallel
   useEffect(() => {
     const timer = setTimeout(async () => {
       try {
-        const [previewResult, wordResult] = await Promise.all([
+        const [previewResult, wordResponse] = await Promise.all([
           parseMarkdownToHtml(markdown),
-          parseMarkdownToWordHtml(markdown),
+          fetch('/api/render/word-html', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ markdown }),
+          }),
         ]);
         setHtml(previewResult);
-        setWordHtml(wordResult);
+        if (wordResponse.ok) {
+          const wordResult = await wordResponse.text();
+          setWordHtml(wordResult);
+        }
       } catch (error) {
         console.error("Failed to parse markdown:", error);
       }
-    }, 300);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [markdown]);
