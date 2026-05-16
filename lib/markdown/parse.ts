@@ -42,28 +42,50 @@ export function preprocessAIOutput(md: string): string {
   processed = processed.replace(mathParensRegex, '$$$1$$');
 
   // 4. Bare-line LaTeX → display math block
-  // ChatGPT outputs equations with NO delimiters — raw LaTeX on its own line.
-  // Match lines that contain: a backslash command (\frac, \exp, etc.)
-  //   OR subscript/superscript notation (_{x}, ^{x}, _x, ^x)
-  //   but are NOT already math-delimited, not headings/list items, not prose.
-  processed = processed.replace(
-    /^(?!\s*\$)(.*)$/gm,
-    (match) => {
-      const t = match.trim();
-      if (!t) return match;
-      // Skip headings, list items, code fences, blockquotes
-      if (/^(#|\*|-|\d+\.|>|```)/.test(t)) return match;
-      // Skip normal prose sentences (contain common English words)
-      if (/\b(the|and|or|is|are|of|in|on|at|to|for|with|where|since|using|therefore|similarly|substituting)\b/i.test(t)) return match;
-      // Must look like LaTeX: has \cmd OR has _{} / ^{} / _x patterns
-      const hasBackslashCmd = /\\[a-zA-Z]/.test(t);
-      const hasSubscriptOrSuper = /[_^]\{|[_^][a-zA-Z0-9]/.test(t);
-      if (hasBackslashCmd || hasSubscriptOrSuper) {
-        return `\n$$\n${t}\n$$\n`;
+  // Process line-by-line so we can track whether we're already inside a $$
+  // block (e.g. from the \[...\] conversion above). The old regex approach
+  // caused double-wrapping: content inside \[...\] was converted to $$...$$
+  // by step 3, then the bare-line detector wrapped it *again*, pushing the
+  // equation OUT of its delimiters and leaving empty blue boxes in the preview.
+  {
+    const lines = processed.split('\n');
+    const out: string[] = [];
+    let inMathBlock = false;    // inside $$ ... $$ fences
+    let inCodeFence = false;    // inside ``` ... ``` fences
+
+    for (const line of lines) {
+      const t = line.trim();
+
+      // Track code fences — never touch anything inside them
+      if (/^```/.test(t)) { inCodeFence = !inCodeFence; out.push(line); continue; }
+      if (inCodeFence) { out.push(line); continue; }
+
+      // Track $$ math fences — a line that is exactly "$$" toggles the block
+      if (t === '$$') { inMathBlock = !inMathBlock; out.push(line); continue; }
+      if (inMathBlock) { out.push(line); continue; }   // already wrapped, leave it
+
+      // Skip lines that already start with a $ (inline or display math)
+      if (t.startsWith('$')) { out.push(line); continue; }
+
+      // Skip empty lines, headings, list markers, blockquotes
+      if (!t || /^(#|\*|-|\d+\.|>)/.test(t)) { out.push(line); continue; }
+
+      // Skip prose (contains common English words)
+      if (/\b(the|and|or|is|are|of|in|on|at|to|for|with|where|since|using|therefore|similarly|substituting)\b/i.test(t)) {
+        out.push(line); continue;
       }
-      return match;
+
+      // Wrap bare LaTeX lines that have \commands or _x / ^x subscripts
+      const hasBackslashCmd    = /\\[a-zA-Z]/.test(t);
+      const hasSubscriptOrSup  = /[_^]\{|[_^][a-zA-Z0-9]/.test(t);
+      if (hasBackslashCmd || hasSubscriptOrSup) {
+        out.push('', '$$', t, '$$', '');
+      } else {
+        out.push(line);
+      }
     }
-  );
+    processed = out.join('\n');
+  }
 
   // 6. Broken Layout Recovery
   // Replace lines that contain only '=' characters with a single '='
