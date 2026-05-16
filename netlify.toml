@@ -1,0 +1,12 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[functions]
+  external_node_modules = [
+    "remark-docx",
+    "mathjax-full",
+    "@mathjax/src",
+    "shiki",
+    "@shikijs/core"
+  ]
