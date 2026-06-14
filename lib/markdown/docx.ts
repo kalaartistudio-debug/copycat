@@ -1,36 +1,30 @@
-import { unified } from "unified";
-import remarkParse from "remark-parse";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import remarkDocx, { type DocxOptions } from "remark-docx";
-import { latexPlugin } from "remark-docx/plugins/latex";
 import { preprocessAIOutput } from "./parse";
+import type { DocxOptions } from "remark-docx";
 
 // No page-break, compact sizes. All sizes in half-points (24 = 12pt, 28 = 14pt, etc.)
 const noBreak = { pageBreakBefore: false, keepNext: false };
 
 const docxOptions: DocxOptions = {
-  // --- thematic break: --- becomes a horizontal rule, NOT a page break
   thematicBreak: "line",
   styles: {
     default: {
       document: {
-        run: { size: 26, font: "Calibri" },          // 13pt body text
+        run: { size: 26, font: "Calibri" },
         paragraph: { spacing: { after: 120 } },
       },
-      title: {                                        // # H1
+      title: {
         run: { size: 36, bold: true, color: "1F2937" },
         paragraph: { ...noBreak, spacing: { before: 240, after: 160 } },
       },
-      heading1: {                                     // ## H2
+      heading1: {
         run: { size: 30, bold: true, color: "1F2937" },
         paragraph: { ...noBreak, spacing: { before: 280, after: 120 } },
       },
-      heading2: {                                     // ### H3
+      heading2: {
         run: { size: 28, bold: true, color: "374151" },
         paragraph: { ...noBreak, spacing: { before: 240, after: 100 } },
       },
-      heading3: {                                     // #### H4
+      heading3: {
         run: { size: 26, bold: true, color: "4B5563" },
         paragraph: { ...noBreak, spacing: { before: 200, after: 80 } },
       },
@@ -44,18 +38,37 @@ const docxOptions: DocxOptions = {
       },
     },
   } as DocxOptions["styles"],
-  plugins: [latexPlugin()],
+  // latexPlugin loaded lazily inside generateDocxBuffer
+  plugins: [],
 };
 
 export async function generateDocxBuffer(markdown: string): Promise<ArrayBuffer> {
   try {
+    // Lazy imports — keep remark-docx and @mathjax/src out of module-level scope
+    // so Next.js build analysis never executes them (MathJax fails outside request context).
+    const [
+      { unified },
+      { default: remarkParse },
+      { default: remarkGfm },
+      { default: remarkMath },
+      { default: remarkDocx },
+      { latexPlugin },
+    ] = await Promise.all([
+      import("unified"),
+      import("remark-parse"),
+      import("remark-gfm"),
+      import("remark-math"),
+      import("remark-docx"),
+      import("remark-docx/plugins/latex"),
+    ]);
+
     const preprocessed = preprocessAIOutput(markdown);
 
     const file = await unified()
       .use(remarkParse)
       .use(remarkGfm)
       .use(remarkMath)
-      .use(remarkDocx, docxOptions)
+      .use(remarkDocx, { ...docxOptions, plugins: [latexPlugin()] })
       .process(preprocessed);
 
     return (await file.result) as ArrayBuffer;

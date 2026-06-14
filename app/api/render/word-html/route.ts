@@ -1,11 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { unified } from "unified";
-import remarkParse from "remark-parse";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import remarkRehype from "remark-rehype";
-import rehypeMathjaxSvg from "rehype-mathjax/svg";
-import rehypeStringify from "rehype-stringify";
 import { visit } from "unist-util-visit";
 import { toHtml } from "hast-util-to-html";
 import type { Element, Root } from "hast";
@@ -14,47 +7,30 @@ import { preprocessAIOutput } from "@/lib/markdown/parse";
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-// 1 ex ≈ 8.5px at 13pt body font (ex = x-height ≈ 50% of em, 1em@13pt ≈ 17.3px)
 const EX_TO_PX = 8.5;
 
-/** Parse a MathJax dimension string like "18.86ex" → pixel number, or null. */
 function exToPx(val: string | undefined): number | null {
   if (!val) return null;
   const m = val.match(/^([\d.]+)ex$/);
   return m ? Math.round(parseFloat(m[1]) * EX_TO_PX) : null;
 }
 
-/**
- * Rehype plugin: converts every <svg> from rehype-mathjax into
- * <img src="data:image/svg+xml;base64,..." width="Npx" height="Npx">.
- *
- * ONLYOFFICE & LibreOffice strip bare <svg> from pasted HTML but respect
- * <img> with data-URIs perfectly.  Pixel dimensions are required — both apps
- * ignore `ex` units, which is why equations were showing as tiny dashes.
- */
 function rehypeSvgToImg() {
   return (tree: Root) => {
     visit(tree, "element", (node: Element, index, parent) => {
       if (node.tagName !== "svg" || !parent || index == null) return;
 
-      // Convert ex dimensions → px before serialising so the embedded SVG
-      // also carries absolute sizes (helps renderers that ignore viewBox).
       const wEx = node.properties?.width  as string | undefined;
       const hEx = node.properties?.height as string | undefined;
       const wPx = exToPx(wEx);
       const hPx = exToPx(hEx);
 
-      // Patch the SVG node with px dimensions before serialising
       if (wPx) node.properties = { ...node.properties, width: `${wPx}`, height: `${hPx ?? wPx}` };
 
-      // Use hast-util-to-html with space:'svg' so that namespaced attributes
-      // like xlink:href are serialised correctly (not as camelCase xlinkHref).
-      // Without this, all <use> glyph references break and only fraction bars render.
       const serialised = toHtml(node, { space: "svg", allowDangerousHtml: true });
       const b64 = Buffer.from(serialised).toString("base64");
       const src = `data:image/svg+xml;base64,${b64}`;
 
-      // Vertical-align from MathJax style e.g. "vertical-align: -1.469ex"
       const mjStyle = (node.properties?.style as string | undefined) ?? "";
       const vaMatch = mjStyle.match(/vertical-align:\s*([-\d.]+)ex/);
       const vaPx = vaMatch ? Math.round(parseFloat(vaMatch[1]) * EX_TO_PX) : 0;
@@ -83,13 +59,32 @@ function rehypeSvgToImg() {
   };
 }
 
-
 export async function POST(req: NextRequest) {
   try {
     const { markdown } = await req.json();
     if (!markdown) {
       return NextResponse.json({ error: "Markdown is required" }, { status: 400 });
     }
+
+    // Lazy imports — keep MathJax out of module-level scope so Next.js build
+    // analysis never touches it (it fails outside a real request context).
+    const [
+      { unified },
+      { default: remarkParse },
+      { default: remarkGfm },
+      { default: remarkMath },
+      { default: remarkRehype },
+      { default: rehypeMathjaxSvg },
+      { default: rehypeStringify },
+    ] = await Promise.all([
+      import("unified"),
+      import("remark-parse"),
+      import("remark-gfm"),
+      import("remark-math"),
+      import("remark-rehype"),
+      import("rehype-mathjax/svg"),
+      import("rehype-stringify"),
+    ]);
 
     const preprocessed = preprocessAIOutput(markdown);
 
@@ -98,8 +93,8 @@ export async function POST(req: NextRequest) {
       .use(remarkGfm)
       .use(remarkMath)
       .use(remarkRehype)
-      .use(rehypeMathjaxSvg)   // math → inline <svg>
-      .use(rehypeSvgToImg)     // inline <svg> → <img data-uri> (compatible with all office apps)
+      .use(rehypeMathjaxSvg)
+      .use(rehypeSvgToImg)
       .use(rehypeStringify)
       .process(preprocessed);
 
