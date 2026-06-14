@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateDocxBuffer } from "@/lib/markdown/docx";
 
+export const dynamic = 'force-dynamic';
 export const maxDuration = 30; // 30 second timeout for heavy DOCX generation
 
 export async function POST(req: NextRequest) {

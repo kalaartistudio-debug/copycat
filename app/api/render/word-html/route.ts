@@ -11,6 +11,7 @@ import { toHtml } from "hast-util-to-html";
 import type { Element, Root } from "hast";
 import { preprocessAIOutput } from "@/lib/markdown/parse";
 
+export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 // 1 ex ≈ 8.5px at 13pt body font (ex = x-height ≈ 50% of em, 1em@13pt ≈ 17.3px)
