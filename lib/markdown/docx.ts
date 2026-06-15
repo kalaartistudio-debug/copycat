@@ -54,12 +54,12 @@ export async function generateDocxBuffer(markdown: string): Promise<ArrayBuffer>
       { default: remarkDocx },
       { latexPlugin },
     ] = await Promise.all([
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "unified"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-parse"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-gfm"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-math"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-docx"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-docx/plugins/latex"),
+      import("unified"),
+      import("remark-parse"),
+      import("remark-gfm"),
+      import("remark-math"),
+      import("remark-docx"),
+      import("remark-docx/plugins/latex"),
     ]);
 
     const preprocessed = preprocessAIOutput(markdown);

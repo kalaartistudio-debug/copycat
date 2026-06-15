@@ -1,63 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { visit } from "unist-util-visit";
-import { toHtml } from "hast-util-to-html";
-import type { Element, Root } from "hast";
 import { preprocessAIOutput } from "@/lib/markdown/parse";
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
-
-const EX_TO_PX = 8.5;
-
-function exToPx(val: string | undefined): number | null {
-  if (!val) return null;
-  const m = val.match(/^([\d.]+)ex$/);
-  return m ? Math.round(parseFloat(m[1]) * EX_TO_PX) : null;
-}
-
-function rehypeSvgToImg() {
-  return (tree: Root) => {
-    visit(tree, "element", (node: Element, index, parent) => {
-      if (node.tagName !== "svg" || !parent || index == null) return;
-
-      const wEx = node.properties?.width  as string | undefined;
-      const hEx = node.properties?.height as string | undefined;
-      const wPx = exToPx(wEx);
-      const hPx = exToPx(hEx);
-
-      if (wPx) node.properties = { ...node.properties, width: `${wPx}`, height: `${hPx ?? wPx}` };
-
-      const serialised = toHtml(node, { space: "svg", allowDangerousHtml: true });
-      const b64 = Buffer.from(serialised).toString("base64");
-      const src = `data:image/svg+xml;base64,${b64}`;
-
-      const mjStyle = (node.properties?.style as string | undefined) ?? "";
-      const vaMatch = mjStyle.match(/vertical-align:\s*([-\d.]+)ex/);
-      const vaPx = vaMatch ? Math.round(parseFloat(vaMatch[1]) * EX_TO_PX) : 0;
-
-      const styleStr = [
-        wPx  ? `width:${wPx}px`           : "",
-        hPx  ? `height:${hPx}px`          : "",
-        vaPx ? `vertical-align:${vaPx}px` : "vertical-align:middle",
-      ].filter(Boolean).join(";");
-
-      const img: Element = {
-        type: "element",
-        tagName: "img",
-        properties: {
-          src,
-          alt: "equation",
-          width:  wPx ? String(wPx) : undefined,
-          height: hPx ? String(hPx) : undefined,
-          style: styleStr,
-        },
-        children: [],
-      };
-
-      parent.children[index] = img;
-    });
-  };
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,24 +11,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Markdown is required" }, { status: 400 });
     }
 
-    // Lazy imports — keep MathJax out of module-level scope so Next.js build
-    // analysis never touches it (it fails outside a real request context).
+    // rehype-katex is used instead of rehype-mathjax — KaTeX has no global
+    // initialiser so it never crashes during Turbopack's build-time analysis.
     const [
       { unified },
       { default: remarkParse },
       { default: remarkGfm },
       { default: remarkMath },
       { default: remarkRehype },
-      { default: rehypeMathjaxSvg },
+      { default: rehypeKatex },
       { default: rehypeStringify },
     ] = await Promise.all([
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "unified"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-parse"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-gfm"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-math"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-rehype"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "rehype-mathjax/svg"),
-      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "rehype-stringify"),
+      import("unified"),
+      import("remark-parse"),
+      import("remark-gfm"),
+      import("remark-math"),
+      import("remark-rehype"),
+      import("rehype-katex"),
+      import("rehype-stringify"),
     ]);
 
     const preprocessed = preprocessAIOutput(markdown);
@@ -93,9 +38,10 @@ export async function POST(req: NextRequest) {
       .use(remarkGfm)
       .use(remarkMath)
       .use(remarkRehype)
-      .use(rehypeMathjaxSvg)
-      .use(rehypeSvgToImg)
-      .use(rehypeStringify)
+      // output:'mathml' emits <math> elements — Word and ONLYOFFICE
+      // both parse MathML from clipboard HTML natively.
+      .use(rehypeKatex, { output: "mathml" })
+      .use(rehypeStringify, { allowDangerousHtml: true })
       .process(preprocessed);
 
     const body = String(file);
@@ -112,7 +58,6 @@ export async function POST(req: NextRequest) {
   p  { margin: 6pt 0; }
   ul, ol { margin: 4pt 0 4pt 24pt; }
   li { margin: 2pt 0; }
-  img { vertical-align: middle; }
   code { font-family: "Courier New", monospace; background: #f5f5f5; padding: 1pt 3pt; }
   pre  { font-family: "Courier New", monospace; background: #f5f5f5; padding: 8pt; }
   strong { font-weight: bold; }
