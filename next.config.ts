@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
     '@mathjax/src',
     'mathjax-full',
     'rehype-mathjax',
+    'rehype-mathjax/svg',
     'shiki',
     '@shikijs/core',
   ],

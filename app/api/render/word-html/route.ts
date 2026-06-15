@@ -77,13 +77,13 @@ export async function POST(req: NextRequest) {
       { default: rehypeMathjaxSvg },
       { default: rehypeStringify },
     ] = await Promise.all([
-      import("unified"),
-      import("remark-parse"),
-      import("remark-gfm"),
-      import("remark-math"),
-      import("remark-rehype"),
-      import("rehype-mathjax/svg"),
-      import("rehype-stringify"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "unified"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-parse"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-gfm"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-math"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "remark-rehype"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "rehype-mathjax/svg"),
+      import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "rehype-stringify"),
     ]);
 
     const preprocessed = preprocessAIOutput(markdown);
