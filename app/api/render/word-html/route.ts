@@ -7,6 +7,13 @@ import { preprocessAIOutput } from "@/lib/markdown/parse";
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
+// mathjax-full/js/components/version.js reads its own package.json at runtime
+// via path.resolve(__dirname, '..', '..', 'package.json'). When bundled, __dirname
+// is the .next chunk dir, so on Vercel that file does not exist and the route 500s.
+// Defining a global PACKAGE_VERSION makes version.js skip the file read entirely
+// (that is the bundler escape hatch the module is written for).
+(globalThis as Record<string, unknown>).PACKAGE_VERSION ??= "3.2.1";
+
 const EX_TO_PX = 8.5;
 
 function exToPx(val: string | undefined): number | null {
