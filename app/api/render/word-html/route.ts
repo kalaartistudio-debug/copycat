@@ -59,12 +59,6 @@ function rehypeSvgToImg() {
   };
 }
 
-// Runtime-only importer. The specifier is a variable inside a string-built
-// function, so NO bundler (Turbopack or webpack) can statically analyse it.
-// This prevents rehype-mathjax/MathJax from being executed during the build's
-// "collect page data" phase, where MathJax's loader crashes outside a request.
-const importRuntime = new Function("m", "return import(m)") as <T = unknown>(m: string) => Promise<T>;
-
 export async function POST(req: NextRequest) {
   try {
     const { markdown } = await req.json();
@@ -86,7 +80,7 @@ export async function POST(req: NextRequest) {
       import("remark-gfm"),
       import("remark-math"),
       import("remark-rehype"),
-      importRuntime<{ default: () => (tree: Root) => void }>("rehype-mathjax/svg"),
+      import("rehype-mathjax/svg"),
       import("rehype-stringify"),
     ]);
 
