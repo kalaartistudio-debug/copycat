@@ -19,27 +19,100 @@ export function preprocessAIOutput(md: string): string {
   processed = processed.replace(/^`{4,5}/gm, '```');
 
   // 3. Advanced Math Normalization
-  // Convert \[ ... \] display math on a single line: \[ expr \] → $$ expr $$
-  processed = processed.replace(/\\{1,2}\[([^\]]*?)\\{1,2}\]/g, '\n$$$$\n$1\n$$$$\n');
+  //
+  // AI tools frequently mangle multi-line display equations: they drop the
+  // backslashes from the \[ \] delimiters (leaving bare "[" / "]"), render an
+  // equals sign as a row of "=" ("===="), prefix continuation steps with a
+  // stray "#" markdown heading, and separate steps with blank lines. If we
+  // naively wrap everything between the delimiters in $$...$$, KaTeX/MathJax
+  // receives one invalid expression and renders a red error. So clean the
+  // block content into a single renderable equation.
+  const cleanMathLines = (raw: string): string =>
+    raw
+      .split('\n')
+      .map((l) => l.trim())
+      .map((l) => (/^=+$/.test(l) ? '=' : l))                                 // "====" row → "="
+      .map((l) => (/^#{1,6}\s+/.test(l) ? '= ' + l.replace(/^#{1,6}\s+/, '') : l)) // "# step" → "= step"
+      .filter((l) => l.length > 0)                                            // drop blank lines
+      .join(' ')
+      .replace(/(?:\s*=\s*){2,}/g, ' = ')                                     // collapse "= =" → "="
+      .trim();
 
-  // Convert \[ \] and \\[ \\] that are alone on their own lines (multi-line block math)
-  // In JS replace(), '$$' means a single '$'. To insert '$$', we must use '$$$$'.
-  processed = processed.replace(/^\\{0,2}\[$/gm, '$$$$').replace(/^\\{0,2}\]$/gm, '$$$$');
-
-  // Replace inline \( \) and \\( \\) with $ — but NOT \left( or \right( (negative lookbehind for letters)
-  processed = processed.replace(/(?<![a-zA-Z])\\{1,2}\(/g, '$').replace(/(?<![a-zA-Z])\\{1,2}\)/g, '$');
-
-  // Convert parenthesised math that contains LaTeX commands or subscripts/superscripts:
-  // (E_{Fn}), (V_T = \dfrac{kT}{e}), (n_i^2), etc. → $E_{Fn}$
-  // Lookbehind: NOT preceded by a letter (blocks \left, \sin, etc.) OR } (blocks 10^{n}(...))
+  // Convert \[ ... \] / \\[ ... \\] display math (single or multi line) → $$ ... $$
   processed = processed.replace(
-    /(?<![a-zA-Z}])\(([^()]*(?:\\[a-zA-Z]+|_|\^|\{|\})[^()]*)\)/g,
-    '$$$1$$'
+    /\\{1,2}\[([^\]]*?)\\{1,2}\]/g,
+    (_m, inner: string) => `\n$$\n${cleanMathLines(inner)}\n$$\n`,
   );
 
-  // Replace plain parentheses around simple single math variables like (V_0) or (N_A)
-  const mathParensRegex = /(?<![a-zA-Z}])\(([A-Za-z](?:_[A-Za-z0-9{}]+)?(?:\s*=\s*[A-Za-z0-9_{}]+)?)\)/g;
-  processed = processed.replace(mathParensRegex, '$$$1$$');
+  // Convert display-math blocks whose delimiters sit alone on their own lines.
+  // Handles bare "[" / "]" (AI dropped the backslash) as well as \[ / \].
+  {
+    const lines = processed.split('\n');
+    const out: string[] = [];
+    const isOpen  = (t: string) => /^\\{0,2}\[$/.test(t);
+    const isClose = (t: string) => /^\\{0,2}\]$/.test(t);
+    let i = 0;
+    while (i < lines.length) {
+      if (isOpen(lines[i].trim())) {
+        const inner: string[] = [];
+        let j = i + 1;
+        let closed = false;
+        while (j < lines.length) {
+          if (isClose(lines[j].trim())) { closed = true; break; }
+          inner.push(lines[j]);
+          j++;
+        }
+        if (closed) {
+          out.push('', '$$', cleanMathLines(inner.join('\n')), '$$', '');
+          i = j + 1;
+          continue;
+        }
+      }
+      out.push(lines[i]);
+      i++;
+    }
+    processed = out.join('\n');
+  }
+
+  // The conversions below turn inline \(...\) and parenthesised math into
+  // $...$. CRITICAL: they must NOT reach inside an already-wrapped $$...$$
+  // display block (created by step 3 above) or a code fence. Otherwise a
+  // literal "(\mathbf{u}\cdot\nabla)" sitting inside a display equation gets
+  // rewritten to "$\mathbf{u}\cdot\nabla$", injecting a stray $ that nests
+  // inside the $$ block and makes KaTeX render a red error. So stash the
+  // protected regions behind NUL placeholders, run the conversions on the
+  // rest, then restore them untouched.
+  {
+    const stash: string[] = [];
+    const ph = (m: string) => { stash.push(m); return `__STASH_${stash.length - 1}__`; };
+    processed = processed
+      .replace(/```[\s\S]*?```/g, ph)    // fenced code
+      .replace(/\$\$[\s\S]*?\$\$/g, ph); // display math
+
+    // Replace inline \( \) and \\( \\) with $ — but NOT \left( / \right(
+    processed = processed
+      .replace(/(?<![a-zA-Z])\\{1,2}\(/g, '$')
+      .replace(/(?<![a-zA-Z])\\{1,2}\)/g, '$');
+
+    // Parenthesised math containing LaTeX commands or sub/superscripts:
+    // (E_{Fn}), (V_T = \dfrac{kT}{e}), (n_i^2), (\Gamma(s)) → $...$.
+    // `atom` allows ONE level of nested parens so a function call like
+    // \Gamma(s) inside the outer (...) is captured instead of aborting.
+    // Lookbehind: NOT preceded by a letter (blocks \left, \sin) or } (blocks 10^{n}(...)).
+    const atom = '(?:[^()]|\\([^()]*\\))';
+    const latexParen = new RegExp(
+      `(?<![a-zA-Z}])\\((${atom}*(?:\\\\[a-zA-Z]+|_|\\^|\\{|\\})${atom}*)\\)`,
+      'g',
+    );
+    processed = processed.replace(latexParen, '$$$1$$');
+
+    // Plain parentheses around simple single math variables like (V_0) or (N_A)
+    const mathParensRegex = /(?<![a-zA-Z}])\(([A-Za-z](?:_[A-Za-z0-9{}]+)?(?:\s*=\s*[A-Za-z0-9_{}]+)?)\)/g;
+    processed = processed.replace(mathParensRegex, '$$$1$$');
+
+    // Restore the stashed display-math / code-fence regions untouched
+    processed = processed.replace(/__STASH_(\d+)__/g, (_m, i) => stash[Number(i)]);
+  }
 
   // 4. Bare-line LaTeX → display math block
   // Process line-by-line so we can track whether we're already inside a $$
